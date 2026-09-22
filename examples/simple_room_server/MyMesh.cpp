@@ -1,5 +1,9 @@
 #include "MyMesh.h"
 
+#ifdef WITH_POTA_GATEWAY
+#include "pota_spotter.h"
+#endif
+
 #define REPLY_DELAY_MILLIS          1500
 #define PUSH_NOTIFY_DELAY_MILLIS    2000
 #define SYNC_PUSH_INTERVAL          1200
@@ -64,6 +68,10 @@ void MyMesh::storePost(const mesh::Identity &author, const char *postData) {
   next_push = futureMillis(PUSH_NOTIFY_DELAY_MILLIS);
   _num_posted++; // stats
   MESH_DEBUG_PRINTLN("room.post: next_post_idx=%d num_posted=%d push scheduled", next_post_idx, _num_posted);
+
+#ifdef WITH_POTA_GATEWAY
+  PotaSpotter::processMessage(nullptr, postData);
+#endif
 }
 
 void MyMesh::pushPostToClient(ClientInfo *client, PostInfo &post) {
@@ -987,6 +995,10 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
       Serial.printf("\n");
     }
     reply[0] = 0;
+#ifdef WITH_POTA_GATEWAY
+  } else if (strcmp(command, "pota") == 0) {
+    PotaSpotter::formatStatus(reply, 160);
+#endif
   } else if (strncmp(command, "room.post", 9) == 0) {
     char* msg = command + 9;
     while (*msg == ' ') msg++;

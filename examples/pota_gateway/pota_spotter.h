@@ -1,0 +1,30 @@
+#pragma once
+
+#include <Arduino.h>
+
+#ifdef WITH_POTA_GATEWAY
+
+/**
+ * Heltec / ESP32 room-server POTA gateway.
+ * Parse and queue only. TLS POST runs on a worker task so Mesh::loop() stays
+ * on the radio. Enable with -D WITH_POTA_GATEWAY=1 on Heltec_v3_room_server.
+ *
+ *   SPOT <CALL> <PARK> <FREQ> <MODE> [comments]          (POTA)
+ *   SPOT [POTA|WWFF|SOTA] <CALL> <REF> <FREQ> <MODE> …
+ *   #pota / #wwff / #sota SPOT ...
+ *
+ * WWFF/SOTA POST to parksnpeaks.org only if a valid PnP user+API key
+ * was saved on the Wi-Fi portal. POTA always uses api.pota.app.
+ */
+class PotaSpotter {
+public:
+    static bool looksLikeSpot(const char* message);
+    static void initWiFi();
+    static void handleLoop();
+    static bool processMessage(const char* senderCall, const char* message);
+    static void formatStatus(char* buf, unsigned bufLen);
+    static bool staIsUp();
+    static void formatScreen(char* ipBuf, unsigned ipLen, char* extraBuf, unsigned extraLen);
+};
+
+#endif

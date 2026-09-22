@@ -6,6 +6,10 @@
   #include <helpers/esp32/SPIFFSMount.h>
 #endif
 
+#ifdef WITH_POTA_GATEWAY
+#include "pota_spotter.h"
+#endif
+
 #ifdef ETHERNET_ENABLED
   #define ETHERNET_CLI_BANNER "MeshCore Room Server CLI"
   #include <helpers/nrf52/EthernetCLI.h>
@@ -90,6 +94,10 @@ void setup() {
 
   the_mesh.begin(fs);
 
+#ifdef WITH_POTA_GATEWAY
+  PotaSpotter::initWiFi();
+#endif
+
 #ifdef DISPLAY_CLASS
   ui_task.begin(the_mesh.getNodePrefs(), FIRMWARE_BUILD_DATE, FIRMWARE_VERSION);
 #endif
@@ -168,5 +176,8 @@ void loop() {
   board.loop();
 #ifdef HAS_EXTERNAL_WATCHDOG
   external_watchdog.loop();
+#endif
+#ifdef WITH_POTA_GATEWAY
+  PotaSpotter::handleLoop();
 #endif
 }
