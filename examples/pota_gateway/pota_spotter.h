@@ -7,7 +7,8 @@
 /**
  * Heltec / ESP32 room-server POTA gateway.
  * Parse and queue only. TLS POST runs on a worker task so Mesh::loop() stays
- * on the mesh. Build with the Heltec_v3_room_server_pota environment.
+ * on the mesh. Build Heltec_v3_room_server_pota, heltec_v4_room_server_pota,
+ * heltec_v4_r8_room_server_pota, or Xiao_S3_WIO_room_server_pota.
  *
  *   SPOT <CALL> <PARK> <FREQ> <MODE> [comments]          (POTA)
  *   SPOT [POTA|WWFF|SOTA] <CALL> <REF> <FREQ> <MODE> …
