@@ -50,7 +50,10 @@ Leave the monitor open. Useful commands (USB serial, 115200 baud, send with Ente
 | `password YourAdminSecret` | Admin CLI password (default `password`) |
 | `set guest.password YourRoomSecret` | Room login password (default `hello`) |
 | `get repeat` | Must stay `off` for daily mesh (see below) |
-| `pota` | Wi-Fi / queue status |
+| `pota` | Wi-Fi / queue status (`blk=` is the block-list size) |
+| `pota block W1AW` | Drop later spots for that callsign (admin CLI) |
+| `pota unblock W1AW` | Remove one callsign from the block list |
+| `pota blocks` | List blocked callsigns |
 | `advert` | Flood advert so clients can discover the room |
 | `room.post SPOT …` | USB dry-run spot (no second node) |
 
@@ -109,7 +112,22 @@ SPOT WWFF W1AW KFF-0001 7.144 SSB CQ WWFF
 SPOT SOTA W1AW/P W1/GM-001 14.285 SSB CQ SOTA
 ```
 
-`K-1234` is rewritten to `US-1234` on **POTA** lines. A reference with `FF-` is treated as WWFF; a reference with `/` is treated as SOTA. Frequency may be MHz (`14.285`) or kHz (`14285`). Mode is uppercased. Comments after mode are optional.
+`K-1234` is rewritten to `US-1234` on **POTA** lines. A reference with `FF-` is treated as WWFF; a reference with `/` is treated as SOTA. Frequency may be MHz with a decimal (`14.285`, `146.52`) or integer kHz (`14285`). Mode is uppercased. Comments after mode are optional. One park reference per line (a comma-separated 2-fer is rejected).
+
+The gateway drops a line **before** HTTPS when any of these fail. The text still stays in the room BBS. Serial shows `[POTA] rejected …`. Rejected lines do not count toward the rate limits.
+
+| Check | Rule |
+|---|---|
+| Callsign | 3–15 characters, `A–Z` `0–9` and up to two `/`, at least one letter and one digit (`W1AW`, `W1AW/P`, `KH6/W1AW`) |
+| POTA reference | 1–3 letters, hyphen, 4 or 5 digits (`US-1234`) |
+| WWFF reference | prefix plus `FF-` and 4 digits (`KFF-0001`, `VKFF-1234`) |
+| SOTA reference | association, `/`, 2-character region, `-`, 3 digits (`W1/GM-001`) |
+| Frequency | 100 kHz through 1300 MHz after conversion |
+| Mode | 2–8 letters or digits (`SSB`, `CW`, `FT8`) |
+| Duplicate | Same program, callsign, reference, frequency, and mode inside 5 minutes |
+| Per callsign | 3 queued spots per activator in any 10 minutes |
+| Whole gateway | 20 queued spots in any hour (POTA, WWFF, and SOTA share this cap) |
+| Block list | Admin `pota block CALL`. `W1AW` also matches `W1AW/P` and `KH6/W1AW`. Up to 16 callsigns, kept in flash across reboot. USB serial or an admin login; the open Wi-Fi page cannot edit it. |
 
 POTA always POSTs to pota.app. WWFF/SOTA POST to [parksnpeaks.org](https://parksnpeaks.org/api/) **only if** a valid PnP user + API key is saved on the portal (`pota` shows `pnp=on`). Get the key from your ParksnPeaks user options page. No key → those lines stay in the room BBS and serial says skipped.
 
@@ -188,7 +206,12 @@ There is no mesh-wide election and no “first node to hear it wins.” Encrypti
 | `[POTA] Queued` then `waiting for Wi-Fi` | Portal or hotspot; run `pota`; join `MeshCore-POTA-Gateway` |
 | HTTP `401` / `403` | `api.pota.app/spot` rejected the post (session/JWT), or PnP API key/user is wrong |
 | `[PNP] skipped` / not queued | No valid ParksnPeaks key; open `http://<sta-ip>/` (OLED shows the DHCP address) |
-| HTTP `400` then `dropping spot` | Bad park/freq/call; check `US-####` and kHz |
+| `[POTA] rejected shape` | Call, reference, frequency, or mode failed the shape check |
+| `[POTA] rejected duplicate` | Same spot inside 5 minutes |
+| `[POTA] rejected call-rate` | That activator already has 3 spots in 10 minutes |
+| `[POTA] rejected hourly` | Gateway already queued 20 spots this hour |
+| `[POTA] rejected blocked` | Callsign is on `pota blocks` |
+| HTTP `400` then `dropping spot` | Upstream rejected the park/freq/call after the local checks |
 | Mesh feels busier after install | `get repeat` must be `off`; don’t flood-advert in a loop |
 
 ---

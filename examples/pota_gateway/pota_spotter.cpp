@@ -16,6 +16,7 @@
 #include <freertos/task.h>
 #include "lwip/dns.h"
 #include "lwip/ip_addr.h"
+#include "pota_guard.h"
 
 #define POTA_HOST "api.pota.app"
 #define POTA_PATH "/spot"
@@ -24,9 +25,9 @@
 #define PNP_KEY_MIN 8
 
 enum SpotProgram : uint8_t {
-    PROG_POTA = 1,
-    PROG_WWFF = 2,
-    PROG_SOTA = 3
+    PROG_POTA = POTA_PROG_POTA,
+    PROG_WWFF = POTA_PROG_WWFF,
+    PROG_SOTA = POTA_PROG_SOTA
 };
 
 struct Pending {
@@ -57,6 +58,7 @@ static char pnpKey[48];
 static WiFiManagerParameter* wmPnpUser = nullptr;
 static WiFiManagerParameter* wmPnpKey = nullptr;
 static WebServer pnpHttp(80);
+static PotaGuard spotGuard;
 
 static void logf(const char* fmt, ...) {
     char buf[192];
@@ -215,10 +217,11 @@ static void normalizePark(char* park) {
 }
 
 static void normalizeFreq(char* freq) {
+    /* A decimal is MHz (14.285, 146.52). A bare integer is already kHz. */
     if (strchr(freq, '.') == NULL) return;
     float f = atof(freq);
-    if (f <= 0.0f) return;
-    int khz = (f < 100.0f) ? (int)(f * 1000.0f + 0.5f) : (int)(f + 0.5f);
+    if (f <= 0.0f || f >= 10000.0f) return;
+    int khz = (int)(f * 1000.0f + 0.5f);
     if (khz > 0) snprintf(freq, 16, "%d", khz);
 }
 
@@ -615,6 +618,28 @@ static const char* skipSpotPrefix(const char* message, const char** afterSpot) {
     return p;
 }
 
+static void potaBlocksLoad() {
+    char csv[POTA_BLOCK_MAX * 16];
+    csv[0] = 0;
+    Preferences store;
+    store.begin("pota", true);
+    store.getString("blocks", csv, sizeof(csv));
+    store.end();
+    potaBlockLoadCsv(&spotGuard, csv);
+    if (spotGuard.blockCount) {
+        logf("[POTA] block list %u callsign(s)", (unsigned)spotGuard.blockCount);
+    }
+}
+
+static void potaBlocksSave() {
+    char csv[POTA_BLOCK_MAX * 16];
+    potaBlockCsv(&spotGuard, csv, sizeof(csv));
+    Preferences store;
+    store.begin("pota", false);
+    store.putString("blocks", csv);
+    store.end();
+}
+
 bool PotaSpotter::looksLikeSpot(const char* message) {
     if (!message) return false;
     const char* after;
@@ -631,6 +656,7 @@ void PotaSpotter::initWiFi() {
     WiFi.persistent(true);
 
     setupWmParams();
+    potaBlocksLoad();
 
     wm.setHostname("meshcore-pota");
     wm.setConfigPortalBlocking(false);
@@ -749,6 +775,22 @@ bool PotaSpotter::processMessage(const char* senderCall, const char* message) {
         copyField(slot.comments, sizeof(slot.comments), "MeshCore room gateway", 22);
     }
 
+    const char* shape = potaShapeWhy(slot.program, slot.activator, slot.park, slot.freq, slot.mode);
+    if (shape) {
+        logf("[POTA] rejected shape %s %s %s %s %s",
+             shape, slot.activator, slot.park, slot.freq, slot.mode);
+        return false;
+    }
+    if (potaBlocked(&spotGuard, slot.activator)) {
+        logf("[POTA] rejected blocked %s", slot.activator);
+        return false;
+    }
+    if (slot.spotter[0] && strcmp(slot.spotter, slot.activator) != 0 &&
+        potaBlocked(&spotGuard, slot.spotter)) {
+        logf("[POTA] rejected blocked %s", slot.spotter);
+        return false;
+    }
+
     if ((slot.program == PROG_WWFF || slot.program == PROG_SOTA) && !pnpEnabled()) {
         logf("[PNP] %s spot not queued — set ParksnPeaks user + API key at http://%s/",
                       programName(slot.program),
@@ -760,11 +802,92 @@ bool PotaSpotter::processMessage(const char* senderCall, const char* message) {
         logf("[POTA] queue not ready");
         return false;
     }
+
+    uint32_t now = (uint32_t)millis();
+    potaGuardNoteTime(&spotGuard, now);
+    int limit = potaGuardLimit(&spotGuard, slot.program, slot.activator, slot.park, slot.freq, slot.mode, now);
+    if (limit != POTA_LIMIT_OK) {
+        const char* why = (limit == POTA_LIMIT_DUP) ? "duplicate" :
+                          (limit == POTA_LIMIT_CALL) ? "call-rate" : "hourly";
+        logf("[POTA] rejected %s %s %s", why, slot.activator, slot.park);
+        return false;
+    }
+
+    potaGuardRemember(&spotGuard, slot.program, slot.activator, slot.park, slot.freq, slot.mode, now);
     xQueueOverwrite(spotQueue, &slot);
     logf("[%s] Queued %s %s %s %s\n",
                   slot.program == PROG_POTA ? "POTA" : "PNP",
                   slot.activator, slot.park, slot.freq, slot.mode);
     return true;
+}
+
+void PotaSpotter::handleAdmin(const char* args, char* reply, unsigned replyLen) {
+    if (!reply || replyLen < 8) return;
+    reply[0] = 0;
+    if (!args) args = "";
+
+    char cmd[16];
+    const char* rest = token(args, cmd, sizeof(cmd));
+    if (strcasecmp(cmd, "blocks") == 0) {
+        if (spotGuard.blockCount == 0) {
+            snprintf(reply, replyLen, "block list empty");
+            return;
+        }
+        logf("[POTA] block list (%u)", (unsigned)spotGuard.blockCount);
+        for (uint8_t i = 0; i < spotGuard.blockCount; i++) {
+            logf("[POTA]  %s", spotGuard.blocks[i]);
+        }
+        int used = snprintf(reply, replyLen, "blocked (%u):", (unsigned)spotGuard.blockCount);
+        if (used < 0 || (unsigned)used >= replyLen) return;
+        for (uint8_t i = 0; i < spotGuard.blockCount; i++) {
+            size_t left = replyLen - (unsigned)used;
+            int n = snprintf(reply + used, left, " %s", spotGuard.blocks[i]);
+            if (n < 0 || (unsigned)n >= left) {
+                if (left > 4) snprintf(reply + used, left, " ...");
+                break;
+            }
+            used += n;
+        }
+        return;
+    }
+
+    if (strcasecmp(cmd, "block") != 0 && strcasecmp(cmd, "unblock") != 0) {
+        snprintf(reply, replyLen, "pota block|unblock CALL | pota blocks");
+        return;
+    }
+
+    char call[16];
+    token(rest, call, sizeof(call));
+    toUpperInPlace(call);
+    char base[16];
+    if (!potaBaseCall(call, base, sizeof(base))) {
+        snprintf(reply, replyLen, "bad callsign");
+        return;
+    }
+
+    if (strcasecmp(cmd, "block") == 0) {
+        int rc = potaBlockAdd(&spotGuard, base);
+        if (rc == 0) {
+            potaBlocksSave();
+            snprintf(reply, replyLen, "blocked %s", base);
+            logf("[POTA] blocked %s", base);
+        } else if (rc == 2) {
+            snprintf(reply, replyLen, "block list full (%d)", POTA_BLOCK_MAX);
+        } else if (rc == 3) {
+            snprintf(reply, replyLen, "already blocked %s", base);
+        } else {
+            snprintf(reply, replyLen, "bad callsign");
+        }
+        return;
+    }
+
+    if (potaBlockRemove(&spotGuard, base) == 0) {
+        potaBlocksSave();
+        snprintf(reply, replyLen, "unblocked %s", base);
+        logf("[POTA] unblocked %s", base);
+    } else {
+        snprintf(reply, replyLen, "not blocked %s", base);
+    }
 }
 
 void PotaSpotter::formatStatus(char* buf, unsigned bufLen) {
@@ -779,6 +902,10 @@ void PotaSpotter::formatStatus(char* buf, unsigned bufLen) {
         snprintf(buf, bufLen, "portal 192.168.4.1 q=%u %s", (unsigned)waiting, pnp);
     } else {
         snprintf(buf, bufLen, "WiFi down q=%u %s", (unsigned)waiting, pnp);
+    }
+    size_t n = strlen(buf);
+    if (n + 1 < bufLen) {
+        snprintf(buf + n, bufLen - n, " blk=%u", (unsigned)spotGuard.blockCount);
     }
 }
 

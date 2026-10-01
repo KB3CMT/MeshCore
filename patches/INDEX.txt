@@ -17,6 +17,7 @@ MeshCore POTA gateway patch sets (applied in-tree)
       examples/simple_room_server/MyMesh.cpp
       processMessage() from storePost() (mesh posts and `room.post`).
       `pota` CLI only when WITH_POTA_GATEWAY is set.
+      `pota block|unblock|blocks` edits the local callsign block list.
 
 0004  HELTEC V3 ENV
       variants/heltec_v3/platformio.ini  [env:Heltec_v3_room_server]
@@ -38,6 +39,9 @@ MeshCore POTA gateway patch sets (applied in-tree)
       ParksnPeaks WWFF/SOTA POST only when a valid user+API key is
       saved on the STA page at http://<dhcp>/ (port 80, OLED shows the
       address). No key = pnp=off, POTA unchanged.
+      Anti-abuse before the queue: call/ref/freq/mode shape, 5-minute
+      duplicate window, 3 spots per activator per 10 minutes, 20 spots
+      per hour, and a 16-call NVS block list (`pota block`).
 
 0006  ROOM SERVER OLED IP
       examples/simple_room_server/UITask.cpp
