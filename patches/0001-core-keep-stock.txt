@@ -1,0 +1,14 @@
+CORE KEEP-STOCK
+===============
+
+Compared to meshcore-dev/MeshCore tag repeater-v1.17.1:
+
+  src/Dispatcher.cpp              MATCH
+  src/helpers/BaseChatMesh.cpp    MATCH
+  examples/simple_repeater/*      MATCH (POTA hooks reverted this session)
+
+Do not apply POTA, Wi-Fi, or HTTP to MeshCore core. src/ is compiled
+into every firmware target. WiFiManager in a src/ header makes
+PlatformIO LDF pull ESP32-only libraries into nRF52/RP2040 builds.
+
+The extra blank line previously left in Dispatcher.cpp was removed.

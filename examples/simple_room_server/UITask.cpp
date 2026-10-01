@@ -1,6 +1,9 @@
 #include "UITask.h"
 #include <Arduino.h>
 #include <helpers/CommonCLI.h>
+#ifdef WITH_POTA_GATEWAY
+#include "pota_spotter.h"
+#endif
 
 #ifndef USER_BTN_PRESSED
 #define USER_BTN_PRESSED LOW
@@ -29,6 +32,7 @@ static const uint8_t meshcore_logo [] PROGMEM = {
 void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* firmware_version) {
   _prevBtnState = HIGH;
   _auto_off = millis() + AUTO_OFF_MILLIS;
+  _started_at = millis();
   _node_prefs = node_prefs;
   _display->turnOn();
 
@@ -47,7 +51,7 @@ void UITask::begin(NodePrefs* node_prefs, const char* build_date, const char* fi
 
 void UITask::renderCurrScreen() {
   char tmp[80];
-  if (millis() < BOOT_SCREEN_MILLIS) { // boot screen
+  if (millis() < _started_at + BOOT_SCREEN_MILLIS) { // boot screen
     // meshcore logo
     _display->setColor(UIColor::corp_blue);
     int logoWidth = 128;
@@ -78,6 +82,18 @@ void UITask::renderCurrScreen() {
     _display->setTextSize(1);
     _display->setColor(UIColor::primary_txt);
     _display->print(_node_prefs->node_name);
+
+#ifdef WITH_POTA_GATEWAY
+    {
+      char ipLine[24];
+      char extra[24];
+      PotaSpotter::formatScreen(ipLine, sizeof(ipLine), extra, sizeof(extra));
+      _display->setCursor(0, 10);
+      _display->print(ipLine);
+      _display->setCursor(0, 40);
+      _display->print(extra);
+    }
+#endif
 
     // freq / sf
     _display->setCursor(0, 20);
@@ -110,6 +126,13 @@ void UITask::loop() {
   }
 #endif
 
+#ifdef WITH_POTA_GATEWAY
+  if (PotaSpotter::staIsUp() && !_display->isOn()) {
+    _display->turnOn();
+    _auto_off = millis() + AUTO_OFF_MILLIS;
+  }
+#endif
+
   if (_display->isOn()) {
     if (millis() >= _next_refresh) {
       _display->startFrame();
@@ -118,8 +141,16 @@ void UITask::loop() {
 
       _next_refresh = millis() + 1000;   // refresh every second
     }
+#ifdef WITH_POTA_GATEWAY
+    if (PotaSpotter::staIsUp()) {
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+    } else if (millis() > _auto_off) {
+      _display->turnOff();
+    }
+#else
     if (millis() > _auto_off) {
       _display->turnOff();
     }
+#endif
   }
 }

@@ -1,0 +1,55 @@
+MeshCore POTA gateway patch sets (applied in-tree)
+=================================================
+
+0001  CORE — keep stock
+      Dispatcher.cpp and helpers/BaseChatMesh.cpp match repeater-v1.17.1.
+      Do not put Wi-Fi, HTTP, or POTA in src/. PlatformIO LDF scans src/
+      for every target; nRF52/RP2040 room servers and Heltec repeaters
+      then fail or grow a captive portal they should not have.
+
+0002  ROOM SERVER LOOP
+      examples/simple_room_server/main.cpp
+      -D WITH_POTA_GATEWAY only. initWiFi() after the_mesh.begin().
+      handleLoop() AFTER the_mesh.loop() so LoRa is always serviced first.
+      Wi-Fi portal is non-blocking; TLS is not in loop().
+
+0003  ROOM SERVER BBS HOOK
+      examples/simple_room_server/MyMesh.cpp
+      processMessage() from storePost() (mesh posts and `room.post`).
+      `pota` CLI only when WITH_POTA_GATEWAY is set.
+
+0004  HELTEC V3 ENV
+      variants/heltec_v3/platformio.ini  [env:Heltec_v3_room_server]
+      -D WITH_POTA_GATEWAY=1
+      -I examples/pota_gateway
+      +<../examples/pota_gateway>
+      WiFiManager git tag v2.0.15-rc.1
+      lib_ldf_mode = deep+
+      Duplicate env in root platformio.ini kept in sync.
+
+0005  GATEWAY MODULE (new, Heltec-only compile unit)
+      examples/pota_gateway/pota_spotter.h
+      examples/pota_gateway/pota_spotter.cpp
+      Parse+queue on the Arduino core. HTTPS POST on FreeRTOS core 0
+      (12KB stack). One-deep overwrite queue. Transient HTTP retry with
+      backoff; 4xx drops. Non-blocking WiFiManager portal after 12s STA.
+      Other room_server targets do not compile this directory.
+      STA wait is ~25s; TLS connect is hostname api.pota.app (SNI).
+      ParksnPeaks WWFF/SOTA POST only when a valid user+API key is
+      saved on the STA page at http://<dhcp>/ (port 80, OLED shows the
+      address). No key = pnp=off, POTA unchanged.
+
+0006  ROOM SERVER OLED IP
+      examples/simple_room_server/UITask.cpp
+      WITH_POTA_GATEWAY only: home screen shows the DHCP address (or
+      192.168.4.1 during first-setup AP) and POTA pnp=on|off. Display
+      stays on while Wi-Fi is up so you can read the address. Web UI
+      is a lightweight server on port 80, not WiFiManager's STA portal.
+
+Issues found and not patched in MeshCore core
+---------------------------------------------
+- api.pota.app/spot may return 401 without a POTA session JWT.
+  Add a Wi-FiManager custom field later if the field test sees 401.
+- tls.setInsecure() — no CA store on the field unit; MITM possible.
+- Wi-Fi TX on Heltec V3 can desense SX1262 RX; hardware coexistence,
+  not a MeshCore bug.
