@@ -998,6 +998,8 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
 #ifdef WITH_POTA_GATEWAY
   } else if (strcmp(command, "pota") == 0) {
     PotaSpotter::formatStatus(reply, 160);
+  } else if (strncmp(command, "pota ", 5) == 0) {
+    PotaSpotter::handleAdmin(command + 5, reply, 160);
 #endif
   } else if (strncmp(command, "room.post", 9) == 0) {
     char* msg = command + 9;

@@ -16,6 +16,10 @@
  *
  * WWFF/SOTA POST to parksnpeaks.org only if a valid PnP user+API key
  * was saved on the Wi-Fi portal. POTA always uses api.pota.app.
+ *
+ * Before queueing, drops spots that fail call/ref/freq/mode shape,
+ * hit the local block list, repeat inside 5 minutes, exceed 3 spots
+ * per activator callsign per 10 minutes, or exceed 20 spots per hour.
  */
 class PotaSpotter {
 public:
@@ -23,6 +27,7 @@ public:
     static void initWiFi();
     static void handleLoop();
     static bool processMessage(const char* senderCall, const char* message);
+    static void handleAdmin(const char* args, char* reply, unsigned replyLen);
     static void formatStatus(char* buf, unsigned bufLen);
     static bool staIsUp();
     static void formatScreen(char* ipBuf, unsigned ipLen, char* extraBuf, unsigned extraLen);
