@@ -60,7 +60,7 @@ POTA always goes to `api.pota.app`. With no ParksnPeaks key, WWFF and SOTA lines
 
 ## What the gateway will forward
 
-Checks run **before** a spot is queued for HTTPS. The line still stays in the room log. A rejection is serial `[POTA] rejected …` and does not count against the rate limits. The room password is still who may post.
+Checks run **before** a spot is queued for HTTPS. The line still stays in the room log. A rejection is serial `[POTA] rejected …` and does not count against the rate limits. Rotating the room password is a way of maintaining who may post to the service.
 
 | Check | Rule |
 |---|---|
@@ -81,7 +81,7 @@ The queue is one-deep while Wi-Fi is down: a newer `SPOT` replaces an older one 
 
 ## Way of service
 
-One named live gateway per mesh. Park it where the internet already is. Leave repeat off. Keep the spare powered off. Share the room password with trusted operators, out of band, and rotate that password to revoke it.
+One named live gateway per mesh edge is preferred. Park it where the internet already is. Leave repeat off. Keep the spare powered off. Share the room password with trusted operators, out of band, and rotate that password to revoke it.
 
 | Practice | Why |
 |---|---|
